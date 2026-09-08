@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradutor-artigos"
+version = "0.1.0"
+description = "Tradução local de artigos em PDF, com preservação de diagramação."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "pdf2zh-next==2.9.0",
+    "babeldoc==0.6.2",
+    "fastapi==0.115.12",
+    "uvicorn==0.34.3",
+    "httpx==0.28.1",
+    "python-multipart==0.0.20",
+    "filelock>=3.16,<4",
+    "pydantic>=2.10,<3",
+    "pymupdf==1.25.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.2", "pytest-asyncio==1.2.0", "ruff==0.12.12", "reportlab==4.4.4"]
+
+[project.scripts]
+tradutor = "tradutor.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tradutor*"]
+
+[tool.setuptools.package-data]
+tradutor = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

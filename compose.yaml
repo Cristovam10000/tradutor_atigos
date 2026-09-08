@@ -1,0 +1,46 @@
+name: tradutor-artigos
+
+services:
+  modelo:
+    image: ollama/ollama:0.33.3
+    environment:
+      OLLAMA_CONTEXT_LENGTH: "8192"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_KEEP_ALIVE: "2m"
+      OLLAMA_NO_CLOUD: "1"
+    volumes:
+      - modelos:/root/.ollama
+    gpus: all
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  app:
+    build: .
+    image: tradutor-artigos:local
+    init: true
+    environment:
+      OLLAMA_HOST: http://modelo:11434
+      TRADUTOR_MODELO: artigos-hymt2:q8
+      TRADUTOR_DADOS: /dados
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      GRADIO_ANALYTICS_ENABLED: "False"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./dados:/dados
+      - ./entrada:/entrada:ro
+      - ./resultados:/resultados
+      - recursos:/root/.cache
+    depends_on:
+      modelo:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  modelos:
+  recursos:

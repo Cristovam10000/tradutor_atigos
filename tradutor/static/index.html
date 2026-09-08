@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Margem · Tradutor de artigos</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="cabecalho"><a class="marca" href="/" aria-label="Margem, início"><span class="simbolo">m.</span> margem</a><span class="local"><span></span> No seu computador</span></header>
+  <main>
+    <section class="introducao">
+      <p class="sobretitulo">SEU PRÓXIMO ARTIGO, EM PORTUGUÊS</p>
+      <h1>Mais perto<br>do conhecimento.</h1>
+      <p class="descricao">Traduza artigos do inglês para o português e acompanhe a leitura com o original ao lado. Seus arquivos ficam aqui, com você.</p>
+      <div class="caracteristicas"><span>01 &nbsp; Envie o PDF</span><span>02 &nbsp; Acompanhe</span><span>03 &nbsp; Explore a tradução</span></div>
+      <div class="nota"><span class="nota-traco"></span><p>A diagramação é preservada sempre que possível.<br>Fórmulas, imagens e tabelas merecem uma conferência final.</p></div>
+    </section>
+    <section class="painel" aria-label="Tradução de artigo">
+      <div class="painel-topo"><h2>Uma nova leitura</h2><span class="idiomas">EN <span aria-hidden="true">→</span> PT-BR</span></div>
+      <form id="formulario">
+        <label class="area-arquivo" id="area-arquivo" for="arquivo">
+          <svg class="icone-documento" width="40" height="46" viewBox="0 0 40 46" fill="none" aria-hidden="true"><path d="M8 2h16l10 10v30H8z" stroke="currentColor" stroke-width="1.6"/><path d="M24 2v11h10M14 22h14M14 28h14M14 34h8" stroke="currentColor" stroke-width="1.6"/></svg>
+          <strong id="nome-arquivo">Escolha seu artigo</strong>
+          <span id="detalhe-arquivo">Arraste um PDF ou clique para selecionar</span>
+          <small>Texto selecionável · Até 50 MB e 200 páginas</small>
+          <input id="arquivo" name="arquivo" type="file" accept=".pdf,application/pdf" required>
+        </label>
+        <p id="estado-modelo" class="estado-modelo" role="status">Verificando o tradutor local…</p>
+        <button type="submit" id="traduzir">Traduzir artigo <span aria-hidden="true">↗</span></button>
+      </form>
+      <div id="andamento" hidden aria-live="polite">
+        <div class="linha-progresso"><span id="etapa">Preparando</span><strong id="percentual">0%</strong></div>
+        <progress id="progresso" max="100" value="0"></progress>
+        <button id="cancelar" class="secundario" type="button">Cancelar tradução</button>
+      </div>
+      <p id="erro" role="alert" hidden></p>
+      <div id="resultado" hidden>
+        <p class="pronto">Seu artigo está pronto para uma nova leitura.</p>
+        <div class="downloads"><a id="baixar-traduzido" class="download" href="#">PDF em português <span>↓</span></a><a id="baixar-bilingue" class="download suave" href="#">Original + tradução <span>↓</span></a></div>
+        <p id="metricas" class="metricas"></p>
+        <details><summary>Observações da tradução</summary><ul id="avisos"></ul></details>
+      </div>
+      <p class="rodape-painel">Tradução automática para apoiar seus estudos.<br>Use a versão bilíngue para conferir os termos importantes.</p>
+    </section>
+  </main>
+  <footer><span>MARGEM / LEITURA SEM FRONTEIRAS</span><span>Local. Sem assinatura. No seu ritmo.</span></footer>
+</body>
+</html>

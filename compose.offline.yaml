@@ -1,0 +1,4 @@
+# A rede interna permite app -> modelo, mas não permite saída para a internet.
+networks:
+  default:
+    internal: true
