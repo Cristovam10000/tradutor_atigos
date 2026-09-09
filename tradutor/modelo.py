@@ -97,7 +97,9 @@ class ClienteModelo:
                 response.raise_for_status()
                 result = RespostaModelo.model_validate(response.json())
         except (ValidationError, ValueError) as exc:
-            raise RespostaInvalida("O modelo retornou uma resposta fora do formato esperado.") from exc
+            raise RespostaInvalida(
+                "O modelo retornou uma resposta fora do formato esperado."
+            ) from exc
         except httpx.HTTPError as exc:
             raise ModeloIndisponivel(
                 "Não foi possível concluir a chamada ao modelo local. Confira os logs do Docker."

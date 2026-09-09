@@ -29,7 +29,9 @@ class Config:
             except ValueError:
                 local = False
         if not local or url.scheme != "http" or url.username or url.password:
-            raise ValueError("OLLAMA_HOST deve apontar para um servidor HTTP local, sem credenciais.")
+            raise ValueError(
+                "OLLAMA_HOST deve apontar para um servidor HTTP local, sem credenciais."
+            )
         if self.contexto != 8192:
             raise ValueError("Esta versão foi configurada para contexto de 8192 tokens.")
         if min(self.max_bytes, self.max_paginas, self.timeout_modelo, self.timeout_tarefa) <= 0:
