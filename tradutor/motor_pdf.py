@@ -1,23 +1,35 @@
 """Adaptação da API recomendada do PDFMathTranslate, sem alterar a biblioteca."""
 
+import shlex
+import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
 from tradutor.config import Config
 
-INSTRUCAO = (
-    "Translate into Brazilian Portuguese, using scientific and technical terminology. "
-    "Preserve all numbers, equations, citation identifiers, code and placeholder tags. "
-    "Do not summarize, omit content or add commentary. "
-    "Follow the requested output structure exactly."
-)
+
+def comando_tradutor(config: Config) -> str:
+    """Comando que o motor executa uma vez por trecho, enviando o texto por stdin.
+
+    Servidor e modelo seguem explícitos: a configuração deste processo é a que
+    vale, e não o ambiente que o processo filho venha a herdar.
+    """
+    return shlex.join([
+        sys.executable,
+        "-m",
+        "tradutor.traduzir_trecho",
+        "--servidor",
+        config.ollama_host,
+        "--modelo",
+        config.modelo,
+    ])
 
 
 def configuracao_motor(config: Config, saida: Path) -> Any:
     # Importação tardia: consultar ajuda ou traduzir texto não precisa carregar o motor de PDF.
     from pdf2zh_next.config.model import PDFSettings, SettingsModel, TranslationSettings
-    from pdf2zh_next.config.translate_engine_model import OpenAISettings
+    from pdf2zh_next.config.translate_engine_model import CLISettings
 
     return SettingsModel(
         translation=TranslationSettings(
@@ -27,7 +39,6 @@ def configuracao_motor(config: Config, saida: Path) -> Any:
             qps=1,
             pool_max_workers=1,
             no_auto_extract_glossary=True,
-            custom_system_prompt=INSTRUCAO,
         ),
         pdf=PDFSettings(
             no_mono=False,
@@ -40,16 +51,14 @@ def configuracao_motor(config: Config, saida: Path) -> Any:
             translate_table_text=True,
             auto_enable_ocr_workaround=False,
         ),
-        # O formato de comunicação é compatível com OpenAI, mas o destino é SOMENTE
-        # o Ollama local. A chave abaixo é um texto fictício exigido pela biblioteca.
-        translate_engine_settings=OpenAISettings(
-            openai_model=config.modelo,
-            openai_base_url=f"{config.ollama_host}/v1",
-            openai_api_key="local-only",
-            openai_timeout=str(config.timeout_modelo),
-            openai_send_temprature=True,
-            openai_temperature="0",
-            openai_enable_json_mode=False,
+        # Motor por linha de comando, escolhido por uma razão medida. Aos motores que
+        # falam com modelos de instrução, a biblioteca envia um bloco de regras junto
+        # do texto; um tradutor puro traduz essas regras, e elas foram parar dentro do
+        # PDF no lugar das legendas. Este motor recebe apenas o texto, e a instrução
+        # fica sob nosso controle, em tradutor/instrucoes.py.
+        translate_engine_settings=CLISettings(
+            clitranslator_command=comando_tradutor(config),
+            clitranslator_timeout=min(300, max(1, int(config.timeout_modelo))),
         ),
     )
 

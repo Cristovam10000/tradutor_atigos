@@ -125,10 +125,10 @@ docker compose run --rm app python -m pytest
 docker compose run --rm app ruff check .
 ```
 
-Os testes verificam a leitura e a validação dos PDFs, a conversa com o modelo, o
-fluxo de tradução, a coleta de avisos do motor e a interface web. Eles não
-substituem a avaliação do modelo real nem a inspeção visual dos PDFs gerados,
-descritas em [docs/arquitetura-e-validacao.md](docs/arquitetura-e-validacao.md).
+Os testes verificam a leitura e a validação dos PDFs, a conversa com o modelo, a
+tradução de um trecho pelo motor, o fluxo completo, a coleta de avisos e a
+interface web. Eles não substituem a avaliação do modelo real nem a inspeção
+visual dos PDFs gerados, descritas em [docs/arquitetura-e-validacao.md](docs/arquitetura-e-validacao.md).
 
 ## Organização
 
@@ -137,6 +137,8 @@ descritas em [docs/arquitetura-e-validacao.md](docs/arquitetura-e-validacao.md).
 | `tradutor/config.py` | Configuração e recusa de qualquer destino que não seja local |
 | `tradutor/pdf.py` | Inspeção do original e verificação estrutural da saída |
 | `tradutor/modelo.py` | Conversa com o Ollama e validação das respostas |
+| `tradutor/instrucoes.py` | Instrução enviada ao modelo e limpeza da resposta |
+| `tradutor/traduzir_trecho.py` | Traduz um trecho vindo por stdin; é o que o motor de PDF executa |
 | `tradutor/motor_pdf.py` | Ajuste do PDFMathTranslate e tradução dos nomes das etapas |
 | `tradutor/servico.py` | Fluxo de tradução, avisos do motor e publicação dos resultados |
 | `tradutor/tarefas.py` | Estado das tarefas da interface web |

@@ -58,18 +58,24 @@ pago.
 `do_translate_async_stream`, que entrega eventos de progresso, conclusão e erro.
 A biblioteca não é modificada; apenas configurada.
 
-A comunicação usa o formato compatível com OpenAI porque é o que a biblioteca
-oferece para servidores próprios — o destino é exclusivamente o Ollama local, e
-a chave de acesso é um texto fictício exigido pela interface.
+O motor de tradução escolhido é o **`CLITranslator`**, que executa um comando
+externo e passa o texto pela entrada padrão. O comando é nosso:
+`python -m tradutor.traduzir_trecho`, que conversa com o Ollama local.
 
-Três ajustes merecem explicação:
+Essa escolha não é de gosto. Aos motores que falam com modelos de instrução, a
+biblioteca envia um bloco de regras de formatação junto do texto; um modelo
+especializado em traduzir traduz essas regras, e elas foram parar dentro do PDF
+no lugar das legendas dos gráficos. Com este motor, esse bloco nunca é enviado:
+ver [§5.3](#53-o-caminho-de-instruções-do-motor-não-serve-a-este-modelo).
+
+Outros três ajustes merecem explicação:
 
 - **`use_alternating_pages_dual=True`** produz o PDF bilíngue com páginas
   alternadas, que é o formato útil para conferir a tradução.
 - **`watermark_output_mode="no_watermark"`** evita marca d'água em um documento
   de uso pessoal.
-- **`disable_rich_text_translate=True`** foi uma decisão medida, não uma
-  preferência: ver [§5.3](#53-o-caminho-estruturado-do-motor-nao-funciona-com-este-modelo).
+- **`disable_rich_text_translate=True`** evita pedir marcação de estilo dentro
+  do parágrafo, que o modelo não reproduz.
 
 ### 2.4 O original é intocável
 
@@ -134,7 +140,7 @@ verificação. O usuário não vê 100% antes de o resultado ter sido conferido.
 
 ## 4. Testes automatizados
 
-44 testes, executados com dependências simuladas — não exigem GPU nem modelo
+63 testes, executados com dependências simuladas — não exigem GPU nem modelo
 carregado.
 
 | Arquivo | O que cobre |
@@ -145,6 +151,7 @@ carregado.
 | `test_servico.py` | Publicação do par de PDFs, original preservado, falhas que não podem virar sucesso, bloqueio entre instâncias, cancelamento, tempo excedido, avisos do motor no resultado, configuração real do motor |
 | `test_avisos.py` | Coleta de avisos, filtragem de ruído, resumo do motor traduzido, deduplicação, **aviso emitido em processo filho**, falha de escrita sem interromper a tradução |
 | `test_web.py` | Envio, consulta, download, arquivo falso, download antes da hora, reinício marcando tarefa interrompida, travessia de caminho, concorrência, cancelamento, nome de arquivo malicioso |
+| `test_traduzir_trecho.py` | Instrução e limites enviados, limpeza do invólucro de destino, respostas inválidas, trecho vazio, trecho longo demais, falha de rede encerrando com erro, argumentos de servidor e modelo, recusa de servidor externo |
 
 Três desses testes merecem destaque porque protegem decisões, e não apenas
 código:
@@ -155,6 +162,10 @@ código:
   falha descrita em §5.4.
 - `test_download_nao_pode_sair_da_pasta_da_tarefa` confirma que um caminho
   gravado no estado da tarefa não consegue servir um arquivo de fora.
+- `test_motor_nao_usa_o_caminho_de_instrucoes_da_biblioteca` verifica a sonda em
+  que a biblioteca se baseia, e que sustenta toda a decisão de §5.3.
+- `test_falha_de_rede_encerra_com_erro` garante que uma falha do modelo não
+  publique o texto original como se estivesse traduzido.
 
 Estes testes **não** comprovam qualidade de tradução nem fidelidade visual. Isso
 é o assunto da próxima seção.
@@ -203,45 +214,65 @@ O que se observou de problemático:
   hiperparâmetros e código, onde a vírgula muda o significado.
 - **O tempo verbal muda**: "We propose" saiu como "Propusemos".
 
-### 5.3 O caminho estruturado do motor não funciona com este modelo
+### 5.3 O caminho de instruções do motor não serve a este modelo
 
-Este é o achado mais importante da validação.
+Este foi o achado que mais mudou o projeto.
 
-O BabelDOC escolhe entre dois tradutores internos. Para motores compatíveis com
-OpenAI, ele usa o `ILTranslatorLLMOnly`, que envia o parágrafo junto de marcações
-de estilo e **espera uma resposta em JSON**. O Hy-MT2 é um modelo especializado
-em traduzir: ele traduz o pedido em vez de responder na estrutura solicitada.
+O BabelDOC tem dois tradutores internos, e escolhe entre eles **sondando o motor**:
 
-O resultado medido, em um artigo de 3 páginas:
+```python
+if translate_engine and hasattr(translate_engine, "do_llm_translate"):
+    translate_engine.do_llm_translate(None)
+    self.support_llm_translate = True
+except NotImplementedError:
+    self.support_llm_translate = False
+```
+
+Quando a sonda passa, a biblioteca envia ao modelo um bloco de regras de
+formatação junto do texto — *"## Rules 1. Keep the structure exactly unchanged:
+do NOT add/remove/reorder any tags, placeholders, or tokens..."* — e espera a
+resposta em JSON.
+
+O Hy-MT2 é um modelo de tradução, não de instrução. Ele **traduziu as regras**
+em vez de segui-las. O resultado medido em um artigo de 3 páginas com o motor
+compatível com OpenAI:
 
 ```text
 WARNING  Error Expecting value: line 1 column 1 (char 0) during translation. try fallback
 INFO     Translation completed. Total: 56, Successful: 0, Fallback: 56
 ```
 
-**56 de 56 trechos** caíram no caminho alternativo. Esse caminho traduz o texto
-normalmente — a qualidade do PDF final não é comprometida no essencial —, mas os
-destaques dentro do parágrafo se perdem, e a tentativa frustrada custa uma
-chamada ao modelo por lote.
+E, pior que o desperdício, o texto das regras foi parar dentro do PDF, no lugar
+das legendas dos gráficos: ver [§5.6](#56-artigos-completos).
 
-Duas consequências práticas:
+**A solução foi trocar o motor, não o modelo.** Dos 16 motores do
+PDFMathTranslate, 7 não implementam `do_llm_translate` — entre eles o
+`CLITranslator`, que executa um comando externo e passa o texto por stdin. Com
+ele, `support_llm_translate` fica falso, a biblioteca usa o tradutor simples e o
+bloco de regras **nunca é enviado**. Não é uma questão de probabilidade: o
+`PROMPT_TEMPLATE` só é usado dentro de `generate_prompt_for_llm`, que só é
+chamado sob aquele `if`.
 
-1. **`disable_rich_text_translate=True`.** Antes desse ajuste, marcadores
-   internos do motor vazavam para o PDF, visíveis como `{v1>Trabalho realizado
-   no Google Brain.` em uma nota de rodapé. Pedir marcação de estilo a um modelo
-   que não a reproduz só produz lixo no documento. Com o ajuste, o vazamento
-   desapareceu e o tempo das mesmas 3 páginas caiu de **238 s para 183 s**, uma
-   redução de 23%.
-2. **O usuário é avisado.** O relatório de cada tradução passou a incluir, em
-   português: *"56 de 56 trechos usaram a tradução simples do motor, porque o
-   modelo não devolveu a estrutura pedida pelo caminho principal."*
+O comando é [`tradutor/traduzir_trecho.py`](../tradutor/traduzir_trecho.py), que
+recebe o trecho por stdin, conversa com o Ollama e devolve a tradução. Ele evita
+importar httpx e pydantic de propósito: o motor executa um processo por trecho, e
+essas dependências custam 0,33 s a cada chamada — mais de dois minutos em um
+artigo de 500 trechos. A medição da partida do processo:
 
-Não há configuração da biblioteca que desligue o caminho estruturado: o BabelDOC
-o escolhe testando se o tradutor implementa `do_llm_translate`, e tanto o motor
-OpenAI quanto o Ollama do PDFMathTranslate o implementam. Contorná-lo exigiria
-alterar a biblioteca, o que este projeto evita. **Um modelo que siga instruções
-de formato — como o TranslateGemma 4B previsto para comparação — provavelmente
-usaria o caminho principal.** Essa comparação ainda não foi feita.
+| O que se importa | Custo por execução |
+|---|---:|
+| Biblioteca padrão apenas | 196 ms |
+| `tradutor.config` + `urllib` + `json` | 296 ms |
+| `tradutor.config` + `tradutor.modelo` (httpx, pydantic) | 630 ms |
+| `tradutor.cli` completo | 868 ms |
+
+Servidor e modelo vão como argumentos no comando, e não pelo ambiente, para que
+a configuração do processo principal seja a que vale. O processo filho monta um
+`Config`, o que faz a recusa de servidores externos valer também ali.
+
+**O que se perde:** glossário automático e os demais recursos do caminho de
+instruções, que já estavam desligados; e um processo do sistema por trecho, cujo
+custo está medido acima e é menor que o do caminho antigo.
 
 ### 5.4 Os avisos do motor não chegavam ao relatório
 
@@ -295,31 +326,23 @@ motor reais.
 | | Duas colunas (ResNet) | Uma coluna (Attention) |
 |---|---:|---:|
 | Páginas | 12 | 15 |
-| Tempo total | 1.073 s (17 min 53 s) | 591 s (9 min 51 s) |
-| Tempo por página | 89,4 s | 39,4 s |
-| Trechos traduzidos | 535 | 199 |
-| Trechos pelo caminho principal | 2 | 9 |
-| Memória principal, pico | 3.945 MB | 4.839 MB |
-| PDF traduzido | 1,26 MB | 2,29 MB |
-| PDF bilíngue | 1,95 MB | 4,28 MB |
+| Tempo total | **452 s (7 min 33 s)** | 591 s (9 min 51 s) |
+| Tempo por página | 37,7 s | 39,4 s |
+| Memória principal, pico | 3.866 MB | 4.839 MB |
+| Blocos com instrução vazada | **0** | 0 |
+| Parágrafos não exportados | **0** | 0 |
 
-O artigo de duas colunas custa mais que o dobro por página: tem mais parágrafos
-curtos, e cada um deles paga a tentativa frustrada descrita em §5.3.
+**Nenhuma página perdeu texto.** A razão entre a quantidade de caracteres da
+tradução e a do original ficou entre 1,05 e 1,18 em todas as 12 páginas — o
+português é mais longo que o inglês, e a razão acompanha isso de forma uniforme.
 
-**Nenhuma página perdeu texto.** A comparação da quantidade de caracteres por
-página entre original e tradução ficou entre 1,05 e 1,66 vezes — o português é
-mais longo que o inglês, e a razão acompanha isso.
+#### O defeito que motivou a troca de motor
 
-#### O modelo traduz as instruções do motor
-
-A página com razão 1,66 revelou o defeito mais grave encontrado na validação, e
-ele só ficou visível porque a coleta de avisos foi corrigida (§5.4).
-
-O motor envia, junto do texto, um conjunto de regras de formatação: *"Keep the
-structure exactly unchanged: do NOT add/remove/reorder tags, placeholders or
-tokens..."*. O Hy-MT2 é um modelo de tradução: ele **traduziu as regras** em vez
-de segui-las, e o motor tratou essa tradução como sendo o conteúdo do trecho.
-O texto foi parar dentro do PDF:
+A medição anterior, com o motor compatível com OpenAI, registrava na mesma
+página 8 uma razão de 1,66. A causa estava visível ao ampliar a figura: a
+legenda do gráfico da esquerda da Figura 6, que deveria conter quatro rótulos
+curtos, havia sido substituída por 776 caracteres com as regras internas do
+motor traduzidas:
 
 ```text
 ## Regras
@@ -328,22 +351,42 @@ O texto foi parar dentro do PDF:
 2. Mantenha todos os tags inalterados (por exemplo, <style>, <b>, </style>).
 ```
 
-O que a inspeção visual mostrou:
+Eram 7 blocos assim, nas páginas 5 e 8, sempre em legendas de figura — os
+fragmentos mais curtos do documento, onde o modelo confundia a instrução com o
+conteúdo. Em outra legenda os quatro rótulos viraram, todos, o título de uma
+seção: `4.3. Detecção de Objetos em PASCAL e MS COCO`.
 
-- O dano ficou **restrito às legendas dentro das figuras** — os quadros pequenos
-  que identificam cada curva do gráfico. São trechos muito curtos, e é neles que
-  o modelo confunde a instrução com o conteúdo.
-- **O corpo do texto, os títulos, as tabelas e as fórmulas não foram afetados.**
-  Na mesma página, as tabelas 7 e 8 e todo o texto corrido saíram corretos.
-- Em quatro trechos o motor recusou a formatação e registrou "Unable to export
-  paragraphs that have not yet been formatted". Esses trechos não foram
-  exportados, mas nenhuma página ficou com falta de texto.
+Comparação direta na mesma legenda, antes e depois da troca de motor descrita em
+[§5.3](#53-o-caminho-de-instruções-do-motor-não-serve-a-este-modelo):
 
-O aviso chega ao usuário no `relatorio.json` e na interface web. Ainda assim,
-**este é o argumento mais forte para avaliar um modelo que siga instruções**,
-como o TranslateGemma 4B previsto no planejamento: o defeito nasce de usar um
-tradutor puro em um motor que conversa por instruções.
+| Rótulo esperado | Motor anterior | Motor por linha de comando |
+|---|---|---|
+| `plain-20` | `4.3. Detecção de Objetos em PASCAL e MS COCO` | `plain-20` |
+| `plain-32` | `4.3. Detecção de Objetos em PASCAL e MS COCO` | `plain-32` |
+| `plain-44` | `4.3. Detecção de Objetos em PASCAL e MS COCO` | `plain-44` |
+| `plain-56` | `4.3. Detecção de Objetos em PASCAL e MS COCO` | `plain-56` |
 
+E o mesmo artigo de 12 páginas caiu de **1.073 s para 452 s — 58% mais rápido**,
+porque somem as 533 tentativas estruturadas que falhavam antes de cair no
+caminho alternativo.
+
+#### O modelo repete o invólucro de destino
+
+Ao trocar de motor, apareceu um segundo defeito, este vindo **do modelo** e não
+da biblioteca. Diante de fragmentos curtos delimitados, o Hy-MT2 responde na
+convenção com que foi treinado:
+
+| Entrada | Resposta do modelo |
+|---|---|
+| `plain-20` | `<target_text>plain-20</target_text>` |
+| `error (%)` | `<targetText>erro (%)</targetText>` |
+| `56-layer` | `56 camadas` |
+
+Tirar a delimitação `<source_text>` da instrução resolveria, mas ela existe para
+que o texto do documento não seja lido como ordem. A delimitação foi mantida e a
+resposta passou a ser limpa em `limpar_resposta`, em
+[`tradutor/instrucoes.py`](../tradutor/instrucoes.py). O comando `texto` sofria
+do mesmo problema e foi corrigido junto.
 
 ### 5.7 Tratamento de erros
 
@@ -380,8 +423,9 @@ tradutor puro em um motor que conversa por instruções.
 
 ## 7. O que ainda não foi verificado
 
-- **Comparação com o TranslateGemma 4B**, que poderia usar o caminho estruturado
-  do motor em vez do alternativo (§5.3).
+- **Comparação com o TranslateGemma 4B.** Deixou de ser necessária para corrigir
+  o vazamento de instruções, resolvido em §5.3, mas continua interessante para
+  comparar qualidade de tradução.
 - **Avaliação da tradução por um leitor da área**, para além da inspeção de
   trechos feita aqui.
 - **Artigos com tabelas densas** e com notação matemática pesada ao longo de

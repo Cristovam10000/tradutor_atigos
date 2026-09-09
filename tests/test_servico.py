@@ -118,9 +118,25 @@ async def test_timeout_libera_bloqueio(pdf, config, tmp_path):
 def test_configuracao_real_do_motor_e_local(config, tmp_path):
     settings = configuracao_motor(config, tmp_path)
     settings.validate_settings()
-    assert settings.translate_engine_settings.openai_base_url == "http://modelo:11434/v1"
+    comando = settings.translate_engine_settings.clitranslator_command
+    assert "tradutor.traduzir_trecho" in comando
+    assert config.ollama_host in comando
+    assert config.modelo in comando
     assert settings.translation.pool_max_workers == 1
     assert settings.translation.no_auto_extract_glossary
     assert settings.pdf.use_alternating_pages_dual
     assert settings.pdf.translate_table_text
     assert settings.pdf.disable_rich_text_translate
+
+
+def test_motor_nao_usa_o_caminho_de_instrucoes_da_biblioteca(config, tmp_path):
+    """A biblioteca envia um bloco de regras aos motores que falam com modelos de
+    instrução. Um tradutor puro traduz essas regras e elas vão parar no PDF."""
+    from pdf2zh_next.translator.translator_impl.clitranslator import CLITranslatorTranslator
+
+    settings = configuracao_motor(config, tmp_path)
+    assert settings.translate_engine_settings.translate_engine_type == "CLITranslator"
+    # A biblioteca decide sondando o motor: se a chamada recusa, ela usa o
+    # caminho simples e nunca envia o bloco de regras ao modelo.
+    with pytest.raises(NotImplementedError):
+        CLITranslatorTranslator.do_llm_translate(None, "texto")
