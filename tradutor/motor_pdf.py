@@ -33,6 +33,9 @@ def configuracao_motor(config: Config, saida: Path) -> Any:
             no_mono=False,
             no_dual=False,
             use_alternating_pages_dual=True,
+            # O modelo é especializado em traduzir, e não em reproduzir marcações.
+            # Pedir estilo dentro do parágrafo faz vazar marcadores como "{v1>" no PDF.
+            disable_rich_text_translate=True,
             watermark_output_mode="no_watermark",
             translate_table_text=True,
             auto_enable_ocr_workaround=False,

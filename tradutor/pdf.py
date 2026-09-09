@@ -41,7 +41,9 @@ def inspecionar_pdf(caminho: Path, config: Config) -> Documento:
             if not doc.permissions & pymupdf.PDF_PERM_COPY:
                 raise PDFProtegido("O PDF possui restrição de cópia do texto.")
             if not 1 <= len(doc) <= config.max_paginas:
-                raise PDFInvalido(f"O documento deve conter entre 1 e {config.max_paginas} páginas.")
+                raise PDFInvalido(
+                    f"O documento deve conter entre 1 e {config.max_paginas} páginas."
+                )
             sem_texto = []
             letras = 0
             for numero, pagina in enumerate(doc, 1):
@@ -72,7 +74,9 @@ def verificar_saida(caminho: Path, paginas_esperadas: int) -> None:
     try:
         with pymupdf.open(caminho) as doc:
             if doc.needs_pass or len(doc) != paginas_esperadas:
-                raise PDFInvalido("O PDF de saída está protegido ou tem quantidade incorreta de páginas.")
+                raise PDFInvalido(
+                    "O PDF de saída está protegido ou tem quantidade incorreta de páginas."
+                )
             if not any(page.get_text().strip() for page in doc):
                 raise PDFInvalido("O PDF de saída não contém texto legível.")
     except (pymupdf.FileDataError, RuntimeError) as exc:

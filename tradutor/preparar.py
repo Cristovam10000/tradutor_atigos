@@ -3,7 +3,6 @@
 import argparse
 import hashlib
 import json
-import subprocess
 import urllib.request
 from pathlib import Path
 
@@ -53,7 +52,9 @@ def baixar_modelo(diretorio: Path) -> Path:
     with destino_verificacao.open("rb") as arquivo:
         digest = hashlib.file_digest(arquivo, "sha256").hexdigest()
     if digest != SHA256 or destino_verificacao.stat().st_size != TAMANHO:
-        raise ValueError("O arquivo do modelo não corresponde ao SHA-256 oficial. Não será importado.")
+        raise ValueError(
+            "O arquivo do modelo não corresponde ao SHA-256 oficial. Não será importado."
+        )
     if destino_verificacao == parcial:
         parcial.replace(destino)
     print("Modelo oficial: tamanho e SHA-256 conferidos.", flush=True)
@@ -100,13 +101,25 @@ def importar_modelo(config: Config, caminho: Path) -> None:
     print(f"Modelo pronto: {config.modelo}", flush=True)
 
 
+def baixar_recursos_pdf() -> None:
+    """Fontes, CMaps, modelo de diagramação e o codificador usado na contagem de tokens.
+
+    A função oficial é chamada dentro do processo: o comando `pdf2zh_next --warmup`
+    baixa os mesmos recursos, mas encerra com erro por exigir um arquivo de entrada.
+    """
+    from babeldoc.assets.assets import warmup
+
+    print("Preparando fontes e modelos de leitura do PDF...", flush=True)
+    warmup()
+    print("Recursos de PDF disponíveis localmente.", flush=True)
+
+
 def preparar(config: Config, somente_baixar: bool = False) -> None:
     caminho = baixar_modelo(config.dados / "modelos")
     if somente_baixar:
         return
     importar_modelo(config, caminho)
-    print("Preparando fontes e modelos de leitura do PDF...", flush=True)
-    subprocess.run(["pdf2zh_next", "--warmup"], check=True)
+    baixar_recursos_pdf()
     comprovante = {
         "modelo": config.modelo,
         "repositorio": REPOSITORIO,
