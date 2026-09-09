@@ -4,8 +4,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-
 from test_servico import ModeloSimulado, MotorSimulado
+
 from tradutor.servico import ServicoTraducao
 from tradutor.tarefas import GerenciadorTarefas, Tarefa
 from tradutor.web import criar_app
@@ -16,7 +16,8 @@ def test_upload_consulta_download(pdf, config):
     with TestClient(criar_app(config, servico)) as client:
         assert client.get("/").status_code == 200
         assert client.get("/saude").json()["modelo"] == "pronto"
-        response = client.post("/api/traducoes", files={"arquivo": ("artigo.pdf", pdf.read_bytes())})
+        envio = {"arquivo": ("artigo.pdf", pdf.read_bytes())}
+        response = client.post("/api/traducoes", files=envio)
         assert response.status_code == 202
         url = "/api/traducoes/" + response.json()["id"]
         for _ in range(100):

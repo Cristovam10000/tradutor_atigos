@@ -1,10 +1,11 @@
 import asyncio
+import logging
 from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
-
 from conftest import criar_pdf
+
 from tradutor.erros import ErroTraducao, Ocupado, PDFInvalido, TempoExcedido
 from tradutor.motor_pdf import configuracao_motor
 from tradutor.pdf import hash_arquivo
@@ -27,10 +28,16 @@ class MotorSimulado:
         try:
             if self.modo == "esperar":
                 await asyncio.sleep(60)
+            if self.modo == "avisando":
+                logging.getLogger("babeldoc.pdf").warning("Fonte ausente na página 1")
             saida.mkdir(parents=True)
             mono = criar_pdf(saida / "mono.pdf")
             dual = criar_pdf(saida / "dual.pdf", 2 if self.modo != "invalido" else 1)
-            yield {"type": "progress_update", "stage": "Translate Paragraphs", "overall_progress": 50}
+            yield {
+                "type": "progress_update",
+                "stage": "Translate Paragraphs",
+                "overall_progress": 50,
+            }
             if self.modo == "erro":
                 yield {"type": "error", "error": "falha simulada após gravar arquivos"}
             elif self.modo != "sem_finish":
@@ -63,6 +70,18 @@ async def test_arquivos_existentes_nao_bastam_para_sucesso(pdf, config, tmp_path
     with pytest.raises((ErroTraducao, PDFInvalido)):
         await consumir(servico, pdf, tmp_path / "saida")
     assert not list((tmp_path / "saida").rglob("*.pdf"))
+
+
+async def test_aviso_do_motor_chega_ao_resultado(pdf, config, tmp_path):
+    servico = ServicoTraducao(config, ModeloSimulado(), MotorSimulado("avisando"))
+    eventos = await consumir(servico, pdf, tmp_path / "saida")
+    assert "Fonte ausente na página 1" in eventos[-1].resultado.avisos
+
+
+async def test_registro_de_avisos_e_removido_ao_final(pdf, config, tmp_path):
+    servico = ServicoTraducao(config, ModeloSimulado(), MotorSimulado("avisando"))
+    await consumir(servico, pdf, tmp_path / "saida")
+    assert not list((config.dados / "trabalho").glob("avisos-*.log"))
 
 
 async def test_bloqueio_entre_instancias(pdf, config, tmp_path):
@@ -104,3 +123,4 @@ def test_configuracao_real_do_motor_e_local(config, tmp_path):
     assert settings.translation.no_auto_extract_glossary
     assert settings.pdf.use_alternating_pages_dual
     assert settings.pdf.translate_table_text
+    assert settings.pdf.disable_rich_text_translate

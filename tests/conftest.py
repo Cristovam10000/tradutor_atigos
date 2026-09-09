@@ -12,7 +12,8 @@ def criar_pdf(caminho: Path, paginas: int = 1, texto: str | None = None) -> Path
             page = doc.new_page()
             page.insert_text(
                 (50, 70),
-                texto or "Software engineering uses evidence to validate a system and its requirements.",
+                texto
+                or "Software engineering uses evidence to validate a system and its requirements.",
             )
         doc.save(caminho)
     return caminho

@@ -33,7 +33,8 @@ async def test_traducao_envia_limites_e_retorna_metricas(config):
     {"unexpected": "shape"},
 ])
 async def test_rejeita_respostas_invalidas(config, resposta):
-    client = ClienteModelo(config, httpx.MockTransport(lambda r: httpx.Response(200, json=resposta)))
+    transporte = httpx.MockTransport(lambda r: httpx.Response(200, json=resposta))
+    client = ClienteModelo(config, transporte)
     with pytest.raises(RespostaInvalida):
         await client.traduzir_texto("A valid English sentence.")
 
