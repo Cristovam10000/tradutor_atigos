@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import shutil
 from collections.abc import AsyncIterator
 from dataclasses import asdict, dataclass
@@ -40,16 +41,53 @@ class Evento:
     resultado: Resultado | None = None
 
 
+MOTORES = ("babeldoc", "pdf2zh_next")
+RESUMO_MOTOR = re.compile(r"Translation completed\. Total: (\d+), Successful: (\d+)")
+
+
 class ColetorAvisos(logging.Handler):
-    def __init__(self) -> None:
-        super().__init__(logging.WARNING)
-        self.mensagens: list[str] = []
+    """Reúne os avisos do motor de PDF em arquivo, e não em memória.
+
+    O motor executa em outro processo, criado a partir deste. O processo filho
+    herda os manipuladores de log já instalados, de modo que uma lista em memória
+    seria preenchida apenas na cópia do filho e chegaria vazia aqui. O arquivo é
+    o ponto de encontro dos dois processos.
+    """
+
+    def __init__(self, arquivo: Path) -> None:
+        super().__init__(logging.INFO)
+        self.arquivo = arquivo
 
     def emit(self, record: logging.LogRecord) -> None:
-        if record.name.startswith(("babeldoc", "pdf2zh_next")):
-            mensagem = record.getMessage()[:700]
-            if mensagem not in self.mensagens and len(self.mensagens) < 30:
-                self.mensagens.append(mensagem)
+        if not record.name.startswith(MOTORES):
+            return
+        mensagem = record.getMessage()
+        if record.levelno >= logging.WARNING:
+            self.registrar(mensagem[:700])
+        elif encontro := RESUMO_MOTOR.search(mensagem):
+            total, completos = int(encontro[1]), int(encontro[2])
+            if total and completos < total:
+                self.registrar(
+                    f"{total - completos} de {total} trechos usaram a tradução simples "
+                    "do motor, porque o modelo não devolveu a estrutura pedida pelo "
+                    "caminho principal. O texto foi traduzido, mas destaques dentro do "
+                    "parágrafo, como itálico e negrito, podem não ser preservados."
+                )
+
+    def registrar(self, mensagem: str) -> None:
+        linha = " ".join(mensagem.split())
+        try:
+            with self.arquivo.open("a", encoding="utf-8") as saida:
+                print(linha, file=saida)
+        except OSError:
+            pass
+
+    def mensagens(self) -> list[str]:
+        try:
+            linhas = self.arquivo.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return []
+        return list(dict.fromkeys(linha for linha in linhas if linha))[:30]
 
 
 def gravar_json(caminho: Path, dados: dict) -> None:
@@ -77,7 +115,14 @@ class ServicoTraducao:
             lock.acquire()
         except Timeout as exc:
             raise Ocupado("Já existe uma tradução em andamento. Aguarde sua conclusão.") from exc
-        coletor = ColetorAvisos()
+        trabalho = self.config.dados / "trabalho"
+        trabalho.mkdir(parents=True, exist_ok=True)
+        registro = trabalho / f"avisos-{uuid4().hex}.log"
+        coletor = ColetorAvisos(registro)
+        # O nível é fixado aqui porque o resumo do motor chega como informação, e não
+        # como aviso: sem isso, um servidor configurado em WARNING descartaria o registro.
+        for nome in MOTORES:
+            logging.getLogger(nome).setLevel(logging.INFO)
         logging.getLogger().addHandler(coletor)
         try:
             async with asyncio.timeout(self.config.timeout_tarefa):
@@ -87,6 +132,7 @@ class ServicoTraducao:
             raise TempoExcedido("A tradução excedeu o limite de tempo e foi interrompida.") from exc
         finally:
             logging.getLogger().removeHandler(coletor)
+            registro.unlink(missing_ok=True)
             lock.release()
 
     async def _executar(
@@ -117,7 +163,7 @@ class ServicoTraducao:
                         )
                     if tipo in {"progress_start", "progress_update", "progress_end"}:
                         valor = evento.get("overall_progress", 0)
-                        if isinstance(valor, (int, float)):
+                        if isinstance(valor, int | float):
                             progresso = max(progresso, min(95.0, max(0.0, valor) * 0.95))
                         yield Evento(nome_etapa(str(evento.get("stage", "PDF"))), progresso)
                     if tipo == "finish":
@@ -129,7 +175,9 @@ class ServicoTraducao:
                 raise
             except Exception as exc:
                 logger.exception("Falha no processamento do PDF")
-                raise ErroTraducao("Falha ao processar o PDF. Confira os logs da aplicação.") from exc
+                raise ErroTraducao(
+                    "Falha ao processar o PDF. Confira os logs da aplicação."
+                ) from exc
             if artefatos is None:
                 raise ErroTraducao("O motor encerrou sem confirmar a conclusão da tradução.")
             mono = getattr(artefatos, "no_watermark_mono_pdf_path", None) or getattr(
@@ -145,7 +193,7 @@ class ServicoTraducao:
             await asyncio.to_thread(verificar_saida, Path(dual), documento.paginas * 2)
             if await asyncio.to_thread(hash_arquivo, documento.caminho) != documento.sha256:
                 raise PDFInvalido("O arquivo original foi alterado durante a tradução.")
-            avisos.extend(coletor.mensagens)
+            avisos.extend(coletor.mensagens())
             avisos.append(
                 "Tradução automática: confira termos, números, fórmulas e tabelas no PDF bilíngue. "
                 "A verificação estrutural não comprova fidelidade semântica ou visual."
