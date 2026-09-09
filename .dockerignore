@@ -10,3 +10,5 @@ entrada
 tmp
 .env
 *.log
+build
+docs
